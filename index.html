@@ -606,12 +606,14 @@
 
   function openModal(btn) {
     var card = btn.closest('.card');
-    var img = card.querySelector('.icon');
+    var icon = card.querySelector('.icon');
+    var origImg = card._origImg || icon;
+    var origSrc = (origImg && origImg.src) ? origImg.src : icon.src;
     cur = {
       file: btn.dataset.file,
       name: btn.dataset.name,
-      src: img.src,
-      img: img,
+      src: origSrc,
+      img: origImg,
       w: +btn.dataset.w,
       h: +btn.dataset.h,
       kbref: +btn.dataset.kb,
@@ -641,7 +643,10 @@
     elLock.setAttribute('aria-pressed', 'true');
     var tres = (cur.file === AZUL_FILE);
     elBlueRow.hidden = !tres;
-    if (tres) setBlue(blueBtns[0].dataset.blue);
+    if (tres) {
+      var sel = btn.dataset.blue || blueBtns[0].dataset.blue;
+      setBlue(sel);
+    }
     markPreset();
     modal.classList.add('open');
     document.body.classList.add('locked');
@@ -658,6 +663,39 @@
     token++;
   }
 
+  function recolorDataUrl(origImg, target) {
+    var w = origImg.naturalWidth, h = origImg.naturalHeight;
+    var c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    var x = c.getContext('2d');
+    x.drawImage(origImg, 0, 0);
+    var d = x.getImageData(0, 0, w, h);
+    var p = d.data;
+    var AZUL = [3, 62, 188];
+    for (var i = 0; i < p.length; i += 4) {
+      var a = (p[i + 2] - p[i]) / (AZUL[2] - AZUL[0]);
+      if (a <= 0.02) continue;
+      if (a > 1) a = 1;
+      var f = 1 - a;
+      var g = (a >= 0.999) ? 0 : (p[i] - AZUL[0] * a) / f;
+      p[i]     = Math.max(0, Math.min(255, Math.round(a * target[0] + f * g)));
+      p[i + 1] = Math.max(0, Math.min(255, Math.round(a * target[1] + f * g)));
+      p[i + 2] = Math.max(0, Math.min(255, Math.round(a * target[2] + f * g)));
+    }
+    x.putImageData(d, 0, 0);
+    return c.toDataURL('image/png');
+  }
+
+  document.querySelectorAll('.card').forEach(function (card) {
+    var icon = card.querySelector('.icon');
+    if (icon) {
+      var o = new Image();
+      o.src = icon.src;
+      card._origImg = o;
+      icon.dataset.orig = icon.src;
+    }
+  });
+
   document.querySelectorAll('button.dl').forEach(function (btn) {
     btn.addEventListener('click', function () { openModal(btn); });
   });
@@ -667,10 +705,20 @@
       e.preventDefault();
       e.stopPropagation();
       var card = fl.closest('.card');
-      var btn = card.querySelector('button.dl');
-      openModal(btn);
-      var blue = fl.dataset.blue;
-      if (blue) setBlue(blue);
+      var icon = card.querySelector('.icon');
+      var orig = card._origImg;
+      var target = fl.dataset.blue.split(',').map(Number);
+      function apply() {
+        icon.src = recolorDataUrl(orig, target);
+        var btn = card.querySelector('button.dl');
+        btn.dataset.blue = fl.dataset.blue;
+        card.querySelectorAll('.flag.pick').forEach(function (x) {
+          x.style.outline = (x === fl) ? '2px solid #1b1d22' : 'none';
+          x.style.outlineOffset = '1px';
+        });
+      }
+      if (orig && orig.complete && orig.naturalWidth) apply();
+      else if (orig) orig.onload = apply;
     });
   });
 
